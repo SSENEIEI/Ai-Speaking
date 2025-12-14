@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ตั้งค่าการฝึกซ้อม - AI Speaking</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* Custom styles for dynamic form elements */
@@ -135,6 +135,16 @@ if (!isset($_SESSION['user_id'])) {
                 </div>
             </div>
         </div>
+
+        <!-- My Saved Scenarios -->
+        <div class="menu-card mb-20" style="text-align: left;">
+            <h3 style="font-size: 1.1rem; margin-bottom: 10px; color: var(--secondary-color);">
+                <i class="fas fa-save"></i> บทสนทนาที่บันทึกไว้
+            </h3>
+            <div id="mySavedScenarios" class="scenario-list">
+                <span style="color: var(--text-muted); font-size: 0.9rem;">กำลังโหลด...</span>
+            </div>
+        </div>
         
         <form action="practice.php" method="POST" id="practiceForm">
             
@@ -178,6 +188,9 @@ if (!isset($_SESSION['user_id'])) {
             </div>
 
             <div class="text-center mt-20">
+                <button type="button" class="btn secondary" onclick="openSaveModal()" style="font-size: 1.2rem; padding: 15px 30px; margin-right: 10px; background: var(--secondary-color); color: white;">
+                    <i class="fas fa-save"></i> บันทึก
+                </button>
                 <button type="submit" class="btn" style="font-size: 1.2rem; padding: 15px 40px;">
                     <i class="fas fa-play-circle"></i> เริ่มฝึกซ้อม
                 </button>
@@ -187,6 +200,18 @@ if (!isset($_SESSION['user_id'])) {
                 </a>
             </div>
         </form>
+    </div>
+
+    <!-- Save Modal -->
+    <div id="saveModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">
+            <h3 style="margin-bottom: 20px; color: var(--primary-color);">บันทึกบทสนทนา</h3>
+            <input type="text" id="scenarioTitle" placeholder="ตั้งชื่อบทสนทนา..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 20px; font-family: 'Prompt', sans-serif;">
+            <div style="display: flex; justify-content: center; gap: 10px;">
+                <button onclick="saveScenario()" class="btn" style="padding: 10px 20px;">บันทึก</button>
+                <button onclick="closeSaveModal()" class="btn secondary" style="padding: 10px 20px;">ยกเลิก</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -347,6 +372,150 @@ if (!isset($_SESSION['user_id'])) {
             // 4. Update User Role Select
             updateSpeakerSelects();
         }
+
+        // --- Save/Load Logic ---
+
+        function openSaveModal() {
+            document.getElementById('saveModal').style.display = 'flex';
+        }
+
+        function closeSaveModal() {
+            document.getElementById('saveModal').style.display = 'none';
+        }
+
+        function saveScenario() {
+            const title = document.getElementById('scenarioTitle').value;
+            if (!title) {
+                alert('กรุณาตั้งชื่อบทสนทนา');
+                return;
+            }
+
+            const form = document.getElementById('practiceForm');
+            const formData = new FormData(form);
+            formData.append('title', title);
+
+            fetch('save_scenario.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('บันทึกเรียบร้อยแล้ว');
+                    closeSaveModal();
+                    fetchSavedScenarios(); // Refresh list
+                } else {
+                    alert('เกิดข้อผิดพลาด: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+            });
+        }
+
+        function fetchSavedScenarios() {
+            fetch('get_scenarios.php')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const container = document.getElementById('mySavedScenarios');
+                    container.innerHTML = '';
+                    
+                    if (data.scenarios.length === 0) {
+                        container.innerHTML = '<p class="text-muted">ยังไม่มีบทสนทนาที่บันทึกไว้</p>';
+                        return;
+                    }
+
+                    data.scenarios.forEach(scenario => {
+                        const div = document.createElement('div');
+                        div.className = 'scenario-card';
+                        div.style.cursor = 'pointer';
+                        div.style.padding = '15px';
+                        div.style.marginBottom = '10px';
+                        div.style.background = '#f8f9fa';
+                        div.style.borderRadius = '10px';
+                        div.style.border = '1px solid #eee';
+                        div.style.transition = 'all 0.3s ease';
+                        
+                        div.onmouseover = function() { this.style.background = '#e9ecef'; this.style.transform = 'translateY(-2px)'; };
+                        div.onmouseout = function() { this.style.background = '#f8f9fa'; this.style.transform = 'translateY(0)'; };
+                        
+                        div.onclick = () => loadSavedScenario(scenario);
+                        div.innerHTML = `
+                            <h4 style="margin: 0 0 5px 0; color: var(--primary-color);">${scenario.title}</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #6c757d;">
+                                <i class="far fa-clock"></i> ${new Date(scenario.created_at).toLocaleString('th-TH')}
+                            </p>
+                        `;
+                        container.appendChild(div);
+                    });
+                }
+            });
+        }
+
+        function loadSavedScenario(scenario) {
+            if (!confirm('ต้องการโหลดบทสนทนา "' + scenario.title + '" ใช่หรือไม่? ข้อมูลปัจจุบันจะถูกแทนที่')) {
+                return;
+            }
+
+            try {
+                // Handle both string JSON and object (if already parsed)
+                const data = typeof scenario.scenario_data === 'string' 
+                    ? JSON.parse(scenario.scenario_data) 
+                    : scenario.scenario_data;
+
+                // 1. Set Speaker Count
+                document.getElementById('speakerCount').value = data.speaker_count;
+
+                // 2. Generate Speaker Inputs manually to avoid default values
+                const container = document.getElementById('speakerInputs');
+                container.innerHTML = '';
+                
+                // Ensure speakers is an array
+                const speakers = Array.isArray(data.speakers) ? data.speakers : [];
+                
+                speakers.forEach((name, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'form-group';
+                    div.innerHTML = `
+                        <label>ชื่อตัวละครที่ ${index + 1}:</label>
+                        <input type="text" name="speakers[]" value="${name}" class="speaker-name-input" onchange="updateSpeakerSelects()" required>
+                    `;
+                    container.appendChild(div);
+                });
+
+                // 3. Update Selects
+                updateSpeakerSelects();
+
+                // 4. Set User Role
+                if (data.user_role) {
+                    const userRoleSelect = document.getElementById('userRoleSelect');
+                    userRoleSelect.value = data.user_role;
+                }
+
+                // 5. Rebuild Script
+                const scriptContainer = document.getElementById('scriptContainer');
+                scriptContainer.innerHTML = '';
+
+                if (data.script_speaker && data.script_text) {
+                    data.script_speaker.forEach((speaker, index) => {
+                        const text = data.script_text[index];
+                        addScriptRow(speaker, text);
+                    });
+                }
+                
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            } catch (e) {
+                console.error('Error loading scenario:', e);
+                alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+            }
+        }
+
+        // Load saved scenarios on page load
+        document.addEventListener('DOMContentLoaded', fetchSavedScenarios);
     </script>
 </body>
 </html>

@@ -6,8 +6,9 @@ $input = json_decode(file_get_contents('php://input'), true);
 $history = $input['history'] ?? [];
 
 // API Key (ควรเก็บใน Environment Variable แต่เพื่อความง่ายใน XAMPP ใส่ตรงนี้)
-$apiKey = 'AIzaSyA5xBQYmUUrUKS7NXo4Lie6mQYU-QPth-4';
-$apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" . $apiKey;
+$apiKey = 'AIzaSyAsO-zCV8oLDmapCHd5YxEgKHMa3FTML9k';
+// Use gemini-2.0-flash for better stability and quota
+$apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' . $apiKey;
 
 // แปลง format history ให้ตรงกับ Gemini API
 // Gemini API ใช้ structure: { "contents": [{ "role": "user", "parts": [{"text": "..."}] }] }
@@ -58,24 +59,43 @@ $data = [
     ]
 ];
 
-// ยิง Request ไปหา Gemini
-$ch = curl_init($apiUrl);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/json'
-]);
+// ยิง Request ไปหา Gemini (พร้อม Retry Logic)
+$maxRetries = 5; // เพิ่มจำนวนครั้งในการลองใหม่
+$retryCount = 0;
+$response = null;
+$httpCode = 0;
 
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+do {
+    $ch = curl_init($apiUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json'
+    ]);
 
-if (curl_errno($ch)) {
-    echo json_encode(['error' => 'Curl error: ' . curl_error($ch)]);
-    exit;
-}
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    if (curl_errno($ch)) {
+        echo json_encode(['error' => 'Curl error: ' . curl_error($ch)]);
+        exit;
+    }
+    curl_close($ch);
 
-curl_close($ch);
+    // ถ้าเจอ 429 (Too Many Requests) ให้รอแล้วลองใหม่
+    if ($httpCode == 429) {
+        $retryCount++;
+        if ($retryCount < $maxRetries) {
+            sleep(5); // รอ 5 วินาที (เพิ่มเวลาให้มากขึ้น)
+            continue;
+        }
+    }
+    
+    // ถ้าไม่ใช่ 429 หรือครบจำนวน retry แล้ว ให้หลุดลูป
+    break;
+
+} while ($retryCount < $maxRetries);
 
 // แปลง Response
 $result = json_decode($response, true);

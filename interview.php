@@ -16,7 +16,7 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interview Mode - AI Speaking</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         /* Specific styles for interview page that extend the base style.css */
@@ -333,14 +333,16 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
             </div>
 
             <div class="settings-panel">
-                <div class="voice-controls">
+                <!-- Voice Controls Removed (Using F5-TTS Only) -->
+                <div class="voice-controls" style="display: none;">
                     <i class="fas fa-volume-up" style="color: var(--text-muted);"></i>
                     <select id="voiceSelect" class="voice-select"></select>
                     <button onclick="testVoice()" class="btn secondary" style="padding: 4px 10px; font-size: 0.8rem;">Test</button>
                 </div>
                 
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <input type="checkbox" id="useCloudTTS" onchange="toggleCloudTTS()">
+                <!-- Cloud TTS Checkbox Removed (Always On) -->
+                <div style="display: none; align-items: center; gap: 5px;">
+                    <input type="checkbox" id="useCloudTTS" checked disabled>
                     <label for="useCloudTTS" style="font-size: 0.85rem; cursor: pointer; color: var(--primary-color);">
                         <i class="fas fa-cloud"></i> AI Voice (HQ)
                     </label>
@@ -458,7 +460,7 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
             statusBar.innerText = "AI กำลังคิด...";
             
             try {
-                const response = await fetch('interview_api.php', {
+                const response = await fetch('api/interview_api.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ history: conversationHistory })
@@ -498,115 +500,62 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
         }
 
         async function speak(text) {
-            window.speechSynthesis.cancel();
+            // Use Edge TTS (via Python backend)
+            statusBar.innerText = "กำลังสร้างเสียง AI...";
+            try {
+                const response = await fetch('api/tts_api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                const data = await response.json();
 
-            // 1. Try Cloud TTS if enabled
-            if (useCloudTTSCheckbox.checked) {
-                statusBar.innerText = "กำลังสร้างเสียง AI...";
-                try {
-                    const response = await fetch('tts_api.php', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text: text })
+                if (data.audioContent) {
+                    // Support both MP3 and WAV
+                    // WAV starts with "UklGR" (RIFF)
+                    // MP3 usually starts with "SUQz" (ID3) or "//" (MPEG frame sync)
+                    const isWav = data.audioContent.startsWith('UklGR');
+                    const mimeType = isWav ? 'audio/wav' : 'audio/mpeg'; 
+                    
+                    const audio = new Audio(`data:${mimeType};base64,` + data.audioContent);
+                    audio.play().catch(e => {
+                        console.error("Audio Playback Error:", e);
+                        if (e.name === 'NotAllowedError') {
+                            statusBar.innerText = "⚠️ กรุณาคลิกที่นี่เพื่อเปิดเสียง";
+                            statusBar.style.cursor = "pointer";
+                            statusBar.onclick = () => {
+                                audio.play();
+                                statusBar.innerText = "กำลังพูด...";
+                                statusBar.style.cursor = "default";
+                                statusBar.onclick = null;
+                            };
+                        } else {
+                            statusBar.innerText = "Play Error: " + e.message;
+                        }
                     });
-                    const data = await response.json();
-
-                    if (data.audioContent) {
-                        const audio = new Audio("data:audio/mp3;base64," + data.audioContent);
-                        audio.play();
-                        audio.onended = () => { statusBar.innerText = "ตาคุณแล้ว"; };
-                        statusBar.innerText = "กำลังพูด...";
-                        return; // Success, exit function
-                    } else {
-                        console.warn("Cloud TTS Failed", data);
-                        alert("ไม่สามารถใช้เสียง AI ได้ (API Key อาจไม่รองรับ) ระบบจะใช้เสียงปกติแทน");
-                        useCloudTTSCheckbox.checked = false; // Uncheck to prevent future errors
-                        toggleCloudTTS();
+                    
+                    audio.onended = () => { statusBar.innerText = "ตาคุณแล้ว"; };
+                    statusBar.innerText = "กำลังพูด...";
+                } else {
+                    console.warn("Cloud TTS Failed", data);
+                    let errorMsg = "ไม่สามารถใช้เสียง AI ได้";
+                    if (data.details && data.details.error) {
+                        errorMsg += ": " + data.details.error;
+                    } else if (data.error) {
+                        errorMsg += ": " + data.error;
                     }
-                } catch (e) {
-                    console.error("Cloud TTS Error:", e);
-                    alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับเสียง AI");
-                    useCloudTTSCheckbox.checked = false;
-                    toggleCloudTTS();
+                    alert(errorMsg);
+                    statusBar.innerText = "Error: TTS Failed";
                 }
+            } catch (e) {
+                console.error("Cloud TTS Error:", e);
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับเสียง AI");
+                statusBar.innerText = "Error: Connection Failed";
             }
-
-            // 2. Fallback to Browser SpeechSynthesis
-            const utterance = new SpeechSynthesisUtterance(text);
-            
-            // Use selected voice
-            const selectedOption = voiceSelect.selectedOptions[0];
-            if (selectedOption) {
-                const selectedName = selectedOption.getAttribute('data-name');
-                const voice = voices.find(v => v.name === selectedName);
-                if (voice) {
-                    utterance.voice = voice;
-                    utterance.lang = voice.lang; // Important: Set lang to match voice
-                }
-            } else {
-                utterance.lang = 'th-TH';
-            }
-            
-            // Adjust pitch and rate
-            utterance.rate = 1.0; 
-            utterance.pitch = 1.0;
-            
-            utterance.onend = () => { statusBar.innerText = "ตาคุณแล้ว"; };
-            window.speechSynthesis.speak(utterance);
         }
 
         function testVoice() {
             speak("สวัสดีครับ นี่คือเสียงทดสอบสำหรับการสัมภาษณ์");
-        }
-
-        // Voice Selection Logic
-        let voices = [];
-        function populateVoiceList() {
-            voices = window.speechSynthesis.getVoices();
-            voiceSelect.innerHTML = '';
-            
-            // Filter for Thai voices first
-            const thaiVoices = voices.filter(voice => voice.lang.includes('th'));
-            const otherVoices = voices.filter(voice => !voice.lang.includes('th'));
-            
-            // Combine: Thai first, then others
-            const allVoices = [...thaiVoices, ...otherVoices];
-
-            if (allVoices.length === 0) {
-                const option = document.createElement('option');
-                option.textContent = "No voices found (Try Chrome)";
-                voiceSelect.appendChild(option);
-                return;
-            }
-
-            allVoices.forEach((voice) => {
-                const option = document.createElement('option');
-                option.textContent = `${voice.name} (${voice.lang})`;
-                option.setAttribute('data-lang', voice.lang);
-                option.setAttribute('data-name', voice.name);
-                voiceSelect.appendChild(option);
-            });
-            
-            // Auto-select a good Thai voice if available
-            // Priority: Google > Narisa > Kanya > Others
-            let preferredVoice = thaiVoices.find(v => v.name.includes('Google'));
-            if (!preferredVoice) preferredVoice = thaiVoices.find(v => v.name.includes('Narisa'));
-            if (!preferredVoice) preferredVoice = thaiVoices.find(v => v.name.includes('Kanya'));
-            if (!preferredVoice) preferredVoice = thaiVoices[0];
-
-            if (preferredVoice) {
-                for(let i=0; i<voiceSelect.options.length; i++) {
-                    if (voiceSelect.options[i].getAttribute('data-name') === preferredVoice.name) {
-                        voiceSelect.selectedIndex = i;
-                        break;
-                    }
-                }
-            }
-        }
-
-        populateVoiceList();
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = populateVoiceList;
         }
 
         // Start the conversation automatically
@@ -616,7 +565,7 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
             // Trigger initial AI greeting
             statusBar.innerText = "กำลังเริ่มการสัมภาษณ์...";
             try {
-                const response = await fetch('interview_api.php', {
+                const response = await fetch('api/interview_api.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ history: conversationHistory })

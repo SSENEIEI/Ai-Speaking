@@ -28,7 +28,7 @@ for ($i = 0; $i < count($script_texts); $i++) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Practice Mode - AI Speaking</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
@@ -317,14 +317,13 @@ for ($i = 0; $i < count($script_texts); $i++) {
 
     <script>
         // ข้อมูลจาก PHP
-        const scriptData = <?php echo json_encode($script); ?>;
-        const speakerNames = <?php echo json_encode($speaker_names); ?>;
-        const userName = <?php echo json_encode($user_name); ?>;
-        const userRole = <?php echo json_encode($user_role); ?>;
+        const scriptData = <?php echo json_encode($script ?? []); ?>;
+        const speakerNames = <?php echo json_encode($speaker_names ?? []); ?>;
+        const userName = <?php echo json_encode($user_name ?? ''); ?>;
+        const userRole = <?php echo json_encode($user_role ?? ''); ?>;
         
         let currentLine = 0;
-        let voices = [];
-        let speakerVoiceMap = {};
+        // Removed browser TTS variables
         let audioContext;
         let analyser;
         let microphone;
@@ -334,33 +333,19 @@ for ($i = 0; $i < count($script_texts); $i++) {
 
         // Generate Progress Dots
         const dotsContainer = document.getElementById('progressDots');
-        scriptData.forEach((_, index) => {
-            const dot = document.createElement('div');
-            dot.className = 'dot';
-            dot.id = `dot-${index}`;
-            dotsContainer.appendChild(dot);
-        });
-
-        // โหลดเสียง TTS
-        function loadVoices() {
-            voices = window.speechSynthesis.getVoices();
-            
-            // Filter Thai voices
-            const thaiVoices = voices.filter(v => v.lang.includes('th'));
-            const otherVoices = voices.filter(v => !v.lang.includes('th'));
-            const allVoices = [...thaiVoices, ...otherVoices]; // Prefer Thai
-
-            // จับคู่เสียงกับคนพูด
-            speakerNames.forEach((name, index) => {
-                // Try to assign different voices
-                const selectedVoice = allVoices[index % allVoices.length];
-                speakerVoiceMap[name] = selectedVoice;
+        if (scriptData && scriptData.length > 0) {
+            scriptData.forEach((_, index) => {
+                const dot = document.createElement('div');
+                dot.className = 'dot';
+                dot.id = `dot-${index}`;
+                dotsContainer.appendChild(dot);
             });
         }
 
-        window.speechSynthesis.onvoiceschanged = loadVoices;
+        // Removed loadVoices function as we use F5-TTS now
 
         async function startPractice() {
+            console.log("Starting practice...");
             document.getElementById('startOverlay').style.opacity = '0';
             setTimeout(() => {
                 document.getElementById('startOverlay').style.display = 'none';
@@ -370,9 +355,6 @@ for ($i = 0; $i < count($script_texts); $i++) {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 setupAudioAnalysis(stream);
-                
-                // โหลดเสียงอีกรอบเผื่อยังไม่มา
-                if (voices.length === 0) loadVoices();
                 
                 processLine();
             } catch (err) {
@@ -482,24 +464,40 @@ for ($i = 0; $i < count($script_texts); $i++) {
         function speakText(text, speaker) {
             document.getElementById('statusText').innerText = "AI กำลังพูด...";
             
-            // ยกเลิกเสียงเก่าที่อาจจะค้างอยู่
-            window.speechSynthesis.cancel();
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.voice = speakerVoiceMap[speaker];
-            utterance.rate = 1; // ความเร็วปกติ
-            utterance.pitch = 1;
-            utterance.lang = 'th-TH'; // Default to Thai
-
-            utterance.onend = function() {
-                // พูดจบแล้ว ไปบรรทัดต่อไป
-                setTimeout(() => {
-                    currentLine++;
-                    processLine();
-                }, 500); // เว้นจังหวะนิดนึง
-            };
-
-            window.speechSynthesis.speak(utterance);
+            // Use F5-TTS via tts_api.php
+            fetch('api/tts_api.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.audioContent) {
+                    // Support both MP3 and WAV
+                    const mimeType = data.audioContent.startsWith('SUQz') ? 'audio/mp3' : 'audio/wav'; 
+                    const audio = new Audio(`data:${mimeType};base64,` + data.audioContent);
+                    audio.play();
+                    audio.onended = function() {
+                        // พูดจบแล้ว ไปบรรทัดต่อไป
+                        setTimeout(() => {
+                            currentLine++;
+                            processLine();
+                        }, 500); // เว้นจังหวะนิดนึง
+                    };
+                } else {
+                    console.error("TTS Failed:", data);
+                    alert("ไม่สามารถสร้างเสียง AI ได้: " + (data.error || "Unknown Error"));
+                    // Skip to next line on error to prevent getting stuck
+                    setTimeout(() => {
+                        currentLine++;
+                        processLine();
+                    }, 1000);
+                }
+            })
+            .catch(error => {
+                console.error("TTS Network Error:", error);
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบเสียง");
+            });
         }
 
         function startListening() {
