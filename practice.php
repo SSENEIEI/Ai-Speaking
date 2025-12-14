@@ -352,6 +352,9 @@ for ($i = 0; $i < count($script_texts); $i++) {
                 document.getElementById('startOverlay').style.display = 'none';
             }, 300);
             
+            // Unlock Audio Context for iOS
+            unlockAudio();
+
             // ขออนุญาตใช้ไมค์
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -362,6 +365,22 @@ for ($i = 0; $i < count($script_texts); $i++) {
                 alert("กรุณาอนุญาตให้ใช้ไมโครโฟนเพื่อใช้งานระบบนี้");
                 console.error(err);
             }
+        }
+
+        function unlockAudio() {
+            // Create global audio object if not exists
+            if (!currentAudio) {
+                currentAudio = new Audio();
+            }
+            // Play silent buffer to unlock
+            currentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAgAAAA==';
+            currentAudio.play().then(() => {
+                console.log('Audio unlocked');
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+            }).catch(e => {
+                console.warn('Audio unlock failed (will try again on next interaction):', e);
+            });
         }
 
         function setupAudioAnalysis(stream) {
@@ -482,7 +501,7 @@ for ($i = 0; $i < count($script_texts); $i++) {
                         currentAudio.currentTime = 0;
                     }
 
-                    currentAudio = new Audio(`data:${mimeType};base64,` + data.audioContent);
+                    currentAudio.src = `data:${mimeType};base64,` + data.audioContent;
                     currentAudio.load(); // Mobile Safari fix
 
                     currentAudio.onended = function() {
@@ -495,16 +514,9 @@ for ($i = 0; $i < count($script_texts); $i++) {
 
                     currentAudio.play().catch(e => {
                         console.error("Audio Playback Error:", e);
-                        // If auto-play fails, try to recover or skip
+                        // If auto-play fails, show a manual play button overlay
                         if (e.name === 'NotAllowedError') {
-                            alert("กรุณาแตะหน้าจอเพื่อเปิดเสียง");
-                            // Wait for user interaction? Or just skip?
-                            // Better to skip to avoid hanging, or show a button.
-                            // For now, let's skip after a delay so it doesn't hang forever
-                            setTimeout(() => {
-                                currentLine++;
-                                processLine();
-                            }, 2000);
+                            showManualPlayButton();
                         } else {
                             // Other errors, skip
                             setTimeout(() => {
@@ -527,6 +539,37 @@ for ($i = 0; $i < count($script_texts); $i++) {
                 console.error("TTS Network Error:", error);
                 alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบเสียง");
             });
+        }
+
+        function showManualPlayButton() {
+            const avatar = document.getElementById('speakerAvatar');
+            // Check if button already exists
+            if (document.getElementById('manualPlayBtn')) return;
+
+            const btn = document.createElement('button');
+            btn.id = 'manualPlayBtn';
+            btn.innerHTML = '<i class="fas fa-play"></i>';
+            btn.style.position = 'absolute';
+            btn.style.top = '50%';
+            btn.style.left = '50%';
+            btn.style.transform = 'translate(-50%, -50%)';
+            btn.style.zIndex = '100';
+            btn.style.width = '60px';
+            btn.style.height = '60px';
+            btn.style.borderRadius = '50%';
+            btn.style.border = 'none';
+            btn.style.background = 'rgba(0,0,0,0.7)';
+            btn.style.color = 'white';
+            btn.style.fontSize = '24px';
+            btn.style.cursor = 'pointer';
+            
+            btn.onclick = () => {
+                currentAudio.play();
+                btn.remove();
+            };
+            
+            avatar.style.position = 'relative';
+            avatar.appendChild(btn);
         }
 
         function startListening() {
