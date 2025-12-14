@@ -394,7 +394,7 @@ if (!isset($_SESSION['user_id'])) {
             const formData = new FormData(form);
             formData.append('title', title);
 
-            fetch('save_scenario.php', {
+            fetch('api/save_scenario.php', {
                 method: 'POST',
                 body: formData
             })
@@ -415,7 +415,7 @@ if (!isset($_SESSION['user_id'])) {
         }
 
         function fetchSavedScenarios() {
-            fetch('get_scenarios.php')
+            fetch('api/get_scenarios.php')
             .then(response => response.json())
             .then(data => {
                 if (data.success) {

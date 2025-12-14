@@ -641,7 +641,7 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
             conversationHistory.push({ role: "user", content: evaluationPrompt });
 
             try {
-                const response = await fetch('interview_api.php', {
+                const response = await fetch('api/interview_api.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ history: conversationHistory })
