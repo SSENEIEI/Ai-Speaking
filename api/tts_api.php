@@ -22,8 +22,8 @@ if (!file_exists($pythonScript)) {
 // Command to execute Python script
 // Note: Ensure 'python3' is in your system PATH and has the required libraries installed.
 // You might need to specify the full path to python, e.g., '/usr/local/bin/python3' or '/opt/homebrew/bin/python3'
-$pythonCmd = "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"; // Updated to specific path found on system
-if (!file_exists($pythonCmd)) {
+$pythonCmd = getenv('PYTHON_PATH') ?: "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"; // Updated to specific path found on system
+if (!file_exists($pythonCmd) && !getenv('PYTHON_PATH')) {
     $pythonCmd = "python3"; // Fallback
 }
 

@@ -5,8 +5,26 @@ header('Content-Type: application/json');
 $input = json_decode(file_get_contents('php://input'), true);
 $history = $input['history'] ?? [];
 
-// API Key (ควรเก็บใน Environment Variable แต่เพื่อความง่ายใน XAMPP ใส่ตรงนี้)
-$apiKey = 'AIzaSyAsO-zCV8oLDmapCHd5YxEgKHMa3FTML9k';
+// API Key Strategy:
+// 1. Try Environment Variable (Production/Render)
+// 2. Try Local Secrets File (Local Development)
+$apiKey = getenv('GEMINI_API_KEY');
+
+if (!$apiKey) {
+    $secretsPath = __DIR__ . '/../config/secrets.php';
+    if (file_exists($secretsPath)) {
+        require_once $secretsPath;
+        if (defined('LOCAL_GEMINI_API_KEY')) {
+            $apiKey = LOCAL_GEMINI_API_KEY;
+        }
+    }
+}
+
+if (!$apiKey) {
+    echo json_encode(['error' => 'Server Configuration Error: API Key not found.']);
+    exit;
+}
+
 // Use gemini-2.0-flash for better stability and quota
 $apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' . $apiKey;
 
