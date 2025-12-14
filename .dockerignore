@@ -1,0 +1,6 @@
+.git
+.gitignore
+.DS_Store
+render_env.txt
+config/secrets.php
+README.md
