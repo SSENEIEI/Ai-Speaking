@@ -1,0 +1,99 @@
+<?php
+header('Content-Type: application/json');
+
+// รับข้อมูลจาก Client
+$input = json_decode(file_get_contents('php://input'), true);
+$history = $input['history'] ?? [];
+
+// API Key (ควรเก็บใน Environment Variable แต่เพื่อความง่ายใน XAMPP ใส่ตรงนี้)
+$apiKey = 'AIzaSyA5xBQYmUUrUKS7NXo4Lie6mQYU-QPth-4';
+$apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" . $apiKey;
+
+// แปลง format history ให้ตรงกับ Gemini API
+// Gemini API ใช้ structure: { "contents": [{ "role": "user", "parts": [{"text": "..."}] }] }
+// System prompt ใน Gemini 1.5 มักจะใส่เป็น user message แรก หรือใช้ systemInstruction (ถ้า model รองรับ)
+// เพื่อความง่าย เราจะแปลง system prompt เป็น user message แรกที่บอก context
+
+$geminiContents = [];
+
+// แยก System Prompt ออกมา (ถ้ามี)
+$systemPrompt = "";
+if (!empty($history) && $history[0]['role'] === 'system') {
+    $systemPrompt = $history[0]['content'];
+    array_shift($history); // เอา system ออกจาก array ปกติ
+}
+
+// สร้าง Prompt แรกที่รวม System Instruction
+if (!empty($systemPrompt)) {
+    // Hack: ใส่ System prompt รวมกับข้อความแรก หรือส่งเป็น User message แรก
+    // สำหรับ Gemini Flash, การส่งเป็น User message แรกทำงานได้ดี
+    $geminiContents[] = [
+        "role" => "user",
+        "parts" => [[ "text" => "System Instruction: " . $systemPrompt . "\n\n(Start the roleplay now)" ]]
+    ];
+}
+
+// เติม History ที่เหลือ
+foreach ($history as $msg) {
+    $role = ($msg['role'] === 'user') ? 'user' : 'model';
+    $geminiContents[] = [
+        "role" => $role,
+        "parts" => [[ "text" => $msg['content'] ]]
+    ];
+}
+
+// ถ้าไม่มี history เลย (เริ่มบทสนทนา)
+if (empty($geminiContents)) {
+    $geminiContents[] = [
+        "role" => "user",
+        "parts" => [[ "text" => "สวัสดีครับ" ]]
+    ];
+}
+
+$data = [
+    "contents" => $geminiContents,
+    "generationConfig" => [
+        "temperature" => 0.7,
+        "maxOutputTokens" => 1000 // ให้ตอบสั้นๆ กระชับ
+    ]
+];
+
+// ยิง Request ไปหา Gemini
+$ch = curl_init($apiUrl);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json'
+]);
+
+$response = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+if (curl_errno($ch)) {
+    echo json_encode(['error' => 'Curl error: ' . curl_error($ch)]);
+    exit;
+}
+
+curl_close($ch);
+
+// แปลง Response
+$result = json_decode($response, true);
+
+if ($httpCode !== 200) {
+    $errorMsg = 'Unknown error';
+    if (isset($result['error']['message'])) {
+        $errorMsg = $result['error']['message'];
+    } else {
+        // กรณี Response ไม่ใช่ JSON หรือไม่มี error message (เช่น 404 HTML)
+        $errorMsg = "HTTP $httpCode";
+    }
+    echo json_encode(['error' => 'API Error: ' . $errorMsg]);
+    exit;
+}
+
+// ดึงข้อความตอบกลับ
+$reply = $result['candidates'][0]['content']['parts'][0]['text'] ?? 'Sorry, I did not understand that.';
+
+echo json_encode(['reply' => $reply]);
+?>
