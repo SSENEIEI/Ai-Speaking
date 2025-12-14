@@ -373,6 +373,7 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
         let timerInterval;
         let timeLeft = durationMinutes * 60; // seconds
         let isInterviewEnded = false;
+        let currentAudio = null; // Global audio object
 
         let conversationHistory = [
             {
@@ -517,14 +518,25 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
                     const isWav = data.audioContent.startsWith('UklGR');
                     const mimeType = isWav ? 'audio/wav' : 'audio/mpeg'; 
                     
-                    const audio = new Audio(`data:${mimeType};base64,` + data.audioContent);
-                    audio.play().catch(e => {
+                    if (currentAudio) {
+                        currentAudio.pause();
+                        currentAudio.currentTime = 0;
+                    }
+
+                    currentAudio = new Audio(`data:${mimeType};base64,` + data.audioContent);
+                    
+                    // Mobile Safari fix: Load explicitly
+                    currentAudio.load();
+
+                    currentAudio.onended = () => { statusBar.innerText = "ตาคุณแล้ว"; };
+                    
+                    currentAudio.play().catch(e => {
                         console.error("Audio Playback Error:", e);
                         if (e.name === 'NotAllowedError') {
                             statusBar.innerText = "⚠️ กรุณาคลิกที่นี่เพื่อเปิดเสียง";
                             statusBar.style.cursor = "pointer";
                             statusBar.onclick = () => {
-                                audio.play();
+                                currentAudio.play();
                                 statusBar.innerText = "กำลังพูด...";
                                 statusBar.style.cursor = "default";
                                 statusBar.onclick = null;
@@ -534,7 +546,6 @@ $duration = $_POST['duration'] ?? 5; // Default 5 minutes
                         }
                     });
                     
-                    audio.onended = () => { statusBar.innerText = "ตาคุณแล้ว"; };
                     statusBar.innerText = "กำลังพูด...";
                 } else {
                     console.warn("Cloud TTS Failed", data);

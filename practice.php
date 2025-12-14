@@ -330,6 +330,7 @@ for ($i = 0; $i < count($script_texts); $i++) {
         let silenceTimer;
         let isListening = false;
         let hasSpoken = false; // เช็คว่าเริ่มพูดหรือยัง
+        let currentAudio = null; // Global audio object
 
         // Generate Progress Dots
         const dotsContainer = document.getElementById('progressDots');
@@ -475,15 +476,43 @@ for ($i = 0; $i < count($script_texts); $i++) {
                 if (data.audioContent) {
                     // Support both MP3 and WAV
                     const mimeType = data.audioContent.startsWith('SUQz') ? 'audio/mp3' : 'audio/wav'; 
-                    const audio = new Audio(`data:${mimeType};base64,` + data.audioContent);
-                    audio.play();
-                    audio.onended = function() {
+                    
+                    if (currentAudio) {
+                        currentAudio.pause();
+                        currentAudio.currentTime = 0;
+                    }
+
+                    currentAudio = new Audio(`data:${mimeType};base64,` + data.audioContent);
+                    currentAudio.load(); // Mobile Safari fix
+
+                    currentAudio.onended = function() {
                         // พูดจบแล้ว ไปบรรทัดต่อไป
                         setTimeout(() => {
                             currentLine++;
                             processLine();
                         }, 500); // เว้นจังหวะนิดนึง
                     };
+
+                    currentAudio.play().catch(e => {
+                        console.error("Audio Playback Error:", e);
+                        // If auto-play fails, try to recover or skip
+                        if (e.name === 'NotAllowedError') {
+                            alert("กรุณาแตะหน้าจอเพื่อเปิดเสียง");
+                            // Wait for user interaction? Or just skip?
+                            // Better to skip to avoid hanging, or show a button.
+                            // For now, let's skip after a delay so it doesn't hang forever
+                            setTimeout(() => {
+                                currentLine++;
+                                processLine();
+                            }, 2000);
+                        } else {
+                            // Other errors, skip
+                            setTimeout(() => {
+                                currentLine++;
+                                processLine();
+                            }, 1000);
+                        }
+                    });
                 } else {
                     console.error("TTS Failed:", data);
                     alert("ไม่สามารถสร้างเสียง AI ได้: " + (data.error || "Unknown Error"));
